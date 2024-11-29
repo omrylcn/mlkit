@@ -35,12 +35,8 @@ class Config(BaseModel):
     model_config = {"protected_namespaces": ()}
 
     @classmethod
-    def load(cls, path: Union[str, Path]) -> "Config":
-        """Load configuration from a YAML file using OmegaConf."""
-        # Load the YAML file using OmegaConf
-        conf = OmegaConf.load(path)
-        config_dict = OmegaConf.to_container(conf, resolve=True)
-
+    def _convert_config_components(cls, config_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert config components to their respective classes."""
         config_dict["data"] = DataConfig.from_dict(config_dict["data"])
         config_dict["tracking"] = TrackingConfig.from_dict(config_dict["tracking"])
         config_dict["logger"] = LoggerConfig.from_dict(config_dict["logger"])
@@ -49,15 +45,27 @@ class Config(BaseModel):
         config_dict["model"] = ModelConfig.from_dict(config_dict["model"])
         config_dict["trainer"] = TrainerConfig.from_dict(config_dict["trainer"])
         config_dict["deploy"] = DeployConfig.from_dict(config_dict["deploy"])
+        return config_dict
+
+    @classmethod
+    def load(cls, path: Union[str, Path]) -> "Config":
+        """Load configuration from a YAML file using OmegaConf."""
+        conf = OmegaConf.load(path)
+        config_dict = OmegaConf.to_container(conf, resolve=True)
+        config_dict = cls._convert_config_components(config_dict)
+
 
         return cls(**config_dict)
 
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> "Config":
         """Create a Config instance from a dictionary."""
+        config_dict = cls._convert_config_components(config_dict)
         return cls(**config_dict)
 
-    @classmethod
-    def save(cls, path: Union[str, Path], config: "Config") -> None:
-        """Save configuration to a YAML file using OmegaConf."""
-        OmegaConf.save(OmegaConf.create(config.model_dump()), path)
+    def save(self, path: Union[str, Path]) -> None:
+        """Save should be instance method"""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        OmegaConf.save(OmegaConf.create(self.model_dump_json()), path,resolve=True)
+    
