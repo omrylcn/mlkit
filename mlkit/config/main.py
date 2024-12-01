@@ -12,6 +12,7 @@ from mlkit.config.pipeline import PipelineConfig
 from mlkit.config.model import ModelConfig
 from mlkit.config.train import TrainerConfig
 from mlkit.config.deploy import DeployConfig
+from mlkit.config.feature_store import FeatureStoreConfig
 
 
 class DataEngine(str, Enum):
@@ -31,6 +32,7 @@ class Config(BaseModel):
     model: ModelConfig
     trainer: TrainerConfig
     deploy: DeployConfig
+    feature_store: FeatureStoreConfig
 
     model_config = {"protected_namespaces": ()}
 
@@ -45,6 +47,7 @@ class Config(BaseModel):
         config_dict["model"] = ModelConfig.from_dict(config_dict["model"])
         config_dict["trainer"] = TrainerConfig.from_dict(config_dict["trainer"])
         config_dict["deploy"] = DeployConfig.from_dict(config_dict["deploy"])
+        config_dict["feature_store"] = FeatureStoreConfig.from_dict(config_dict["feature_store"])
         return config_dict
 
     @classmethod

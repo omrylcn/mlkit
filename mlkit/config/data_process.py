@@ -12,12 +12,14 @@ class FeatureState(str, Enum):
 
 class FeatureType(str, Enum):
     BOOL = "bool"
-    INT = "int"
-    FLOAT = "float"
+    INT32 = "int32"
+    INT64 = "int64"
+    FLOAT32 = "float32"
+    FLOAT64 = "float64"
     STRING = "string"
     CATEGORICAL = "categorical"
-    TEMPORAL = "datetime"
-    MIXED = "mixed"
+    DATETIME = "datetime"
+    
 
 
 class FeatureClass(str, Enum):
@@ -45,6 +47,8 @@ class FeatureCard(BaseModel):
     feature_type: FeatureType = Field(..., description="Type of the feature")
     feature_class: FeatureClass = Field(..., description="Class/category of the feature")
     scope: Scope = Field(..., description="Processing scope")
+    dependencies: Optional[List[str]] = Field([], description="List of dependencies")
+    processor :Optional[str] = Field(None, description="Processor name")
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "FeatureCard":
@@ -52,32 +56,26 @@ class FeatureCard(BaseModel):
         return cls(**data)
 
 
-class ProcessStepCard(BaseModel):
-    """Process step configuration card."""
+class ProcessorCard(BaseModel):
+    """Processor configuration card."""
 
     name: str = Field(..., description="Name of the feature")
-    feature_type: FeatureType = Field(..., description="Type of the feature")
-    feature_class: FeatureClass = Field(..., description="Class/category of the feature")
     input_columns: List[str] = Field(..., description="Input column names")
     output_columns: List[str] = Field(..., description="Output column names")
     scope: Scope = Field(..., description="Processing scope")
     feature_store: bool = Field(default=False, description="Whether to store in feature store")
-    enabled: bool = Field(default=True, description="Whether the feature is enabled")
     description: Optional[str] = Field(None, description="Feature description")
     parameters: Dict[str, Any] = Field(default_factory=dict, description="Additional parameters")
 
-    model_config = {"frozen": True}
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ProcessStepCard":
+    def from_dict(cls, data: Dict[str, Any]) -> "ProcessorCard":
         """Create process step from dictionary."""
         return cls(**data)
 
     def model_dump(self, **kwargs) -> Dict[str, Any]:
         """Convert to dictionary with enum values."""
         data = super().model_dump(**kwargs)
-        data["feature_type"] = self.feature_type.value
-        data["feature_class"] = self.feature_class.value
         data["scope"] = self.scope.value
         return data
 
@@ -85,10 +83,10 @@ class ProcessStepCard(BaseModel):
 class DataProcessConfig(BaseModel):
     """Data processing configuration."""
 
-    steps: List[ProcessStepCard] = Field(..., description="List of feature cards")
+    processors : Dict[str,ProcessorCard] = Field(..., description="Dict of process")
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "DataProcessConfig":
         """Create DataProcessConfig from dictionary."""
-        steps = [ProcessStepCard.from_dict(step) for step in data["steps"]]
-        return cls(steps=steps)
+        prcs = {key : ProcessorCard.from_dict(prc) for key,prc in data["processors"].items()}
+        return cls(processors=prcs)
