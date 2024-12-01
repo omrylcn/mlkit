@@ -6,17 +6,16 @@ import polars as pl
 from pathlib import Path
 import pickle
 
-from mlkit.config.data_process import ProcessStepCard, FeatureState
+from mlkit.config.data_process import ProcessorCard, FeatureState
 
 
 class BaseFeatureTransformer(BaseEstimator, TransformerMixin, ABC):
     """Base class for all feature transformers with state control"""
 
-    def __init__(self, process_step_card: ProcessStepCard, feature_store=None):
-        self.process_step_card = process_step_card
+    def __init__(self, processor_card: ProcessorCard):
+        self.processor_card = processor_card
         self._fitted_state: Dict[str, Any] = {}
         self.state = FeatureState.TRAINING
-        self.feature_store = feature_store
         self.save_object = None
 
     def set_state(self, state: FeatureState):
@@ -27,17 +26,6 @@ class BaseFeatureTransformer(BaseEstimator, TransformerMixin, ABC):
         """Verify if fitting is allowed in current state"""
         if self.state != FeatureState.TRAINING:
             raise ValueError("Fit only allowed in TRAINING state")
-
-    def _load_or_compute(self, X: pd.DataFrame, computation_func):
-        """Load from feature store or compute based on state"""
-        if self.state == FeatureState.TRAINING:
-            return computation_func(X)
-        else:
-            # In prediction, try feature store first
-            if self.feature_store is not None:
-                return self.feature_store.get_feature(self.process_step_card.name)
-            else:
-                return computation_func(X)
 
     @abstractmethod
     def fit(self, X, y=None):
@@ -50,19 +38,29 @@ class BaseFeatureTransformer(BaseEstimator, TransformerMixin, ABC):
         """Transform data"""
         pass
 
+    @abstractmethod
+    def check_after_process(self, X):
+        """Check check data result"""
+        pass
+
+    @abstractmethod
+    def check_before_process(self, X):
+        """Check check input data"""
+        pass
+
     # get attributes
     @property
     def saving_params(self):
         """Return parameters for saving"""
         return {
-            "process_step_card": self.process_step_card.model_dump(),
+            "processor_card": self.processor_card.model_dump(),
             "fitted_state": self._fitted_state,
             "state": self.state.value,  # Also save the state
         }
 
     def load_params(self, params: Dict[str, Any]):
         """Load parameters from a dictionary"""
-        self.process_step_card = ProcessStepCard(**params["process_step_card"])
+        self.processor_card = ProcessorCard(**params["processor_card"])
         self._fitted_state = params["fitted_state"]
         self.state = FeatureState(params["state"])
 
@@ -71,11 +69,7 @@ class BaseFeatureTransformer(BaseEstimator, TransformerMixin, ABC):
         path = Path(path)
         path.mkdir(parents=True, exist_ok=True)
 
-        self.save_object = {
-            "process_step_card": self.process_step_card.model_dump(),
-            "fitted_state": self._fitted_state,
-            "state": self.state.value,  # Also save the state
-        }
+        self.save_object = self.saving_params
 
         with open(path / "save_object.pkl", "wb") as f:
             pickle.dump(self.save_object, f)
@@ -86,7 +80,7 @@ class BaseFeatureTransformer(BaseEstimator, TransformerMixin, ABC):
 
         with open(path / "save_object.pkl", "rb") as f:
             self.save_object = pickle.load(f)
-            self.process_step_card = ProcessStepCard.from_dict(self.save_object["process_step_card"])
+            self.processor_card = ProcessorCard.from_dict(self.save_object["processor_card"])
             self._fitted_state = self.save_object["fitted_state"]
             self.state = FeatureState(self.save_object["state"])  # Restore the state
 
@@ -115,6 +109,19 @@ class PandasProcessor(BaseFeatureTransformer):
         """Implementation of pandas-specific transform logic"""
         pass
 
+    def check_after_process(self, X: pd.DataFrame):
+        """Check check data result"""
+        
+        for column in self.processor_card.output_columns:
+            if column not in X.columns:
+                raise ValueError(f"Column {column} not found in DataFrame")
+        
+    def check_before_process(self, X: pd.DataFrame):
+        """Check check input data"""
+        for column in self.processor_card.input_columns:
+            if column not in X.columns:
+                raise ValueError(f"Column {column} not found in DataFrame")
+
 
 class PolarsProcessor(BaseFeatureTransformer):
     """Base class for Polars-based transformers"""
@@ -142,21 +149,21 @@ class PolarsProcessor(BaseFeatureTransformer):
 
 
 class CategoricalTransformPandas(PandasProcessor):
-    def __init__(self, process_step_card: ProcessStepCard):
-        super().__init__(process_step_card)
-        self.process_step_card = process_step_card
+    def __init__(self, processor_card: ProcessorCard):
+        super().__init__(processor_card)
+        self.processor_card = processor_card
 
-        if len(self.process_step_card.input_columns) != len(self.process_step_card.parameters["method"]):
+        if len(self.processor_card.input_columns) != len(self.processor_card.parameters["method"]):
             raise ValueError("Input columns and method length must match")
 
         self._category_maps = {}
 
     def _fit_impl(self, X: pd.DataFrame, y=None):
-        missing_cols = [col for col in self.process_step_card.input_columns if col not in X.columns]
+        missing_cols = [col for col in self.processor_card.input_columns if col not in X.columns]
         if missing_cols:
             raise ValueError(f"Missing columns in DataFrame: {missing_cols}")
 
-        for col, method in zip(self.process_step_card.input_columns, self.process_step_card.parameters["method"]):
+        for col, method in zip(self.processor_card.input_columns, self.processor_card.parameters["method"]):
             unique_values = X[col].unique()
             if method == "label":
                 self._category_maps[col] = {cat: idx for idx, cat in enumerate(unique_values)}
@@ -171,23 +178,23 @@ class CategoricalTransformPandas(PandasProcessor):
 
     def _transform_impl(self, X: pd.DataFrame) -> pd.DataFrame:
         df = X.copy()
-        prefix = self.process_step_card.parameters["prefix"]
+        prefix = self.processor_card.parameters["prefix"]
         self._category_maps = self._fitted_state["_category_maps"]
 
-        for col, method in zip(self.process_step_card.input_columns, self.process_step_card.parameters["method"]):
+        for col, method in zip(self.processor_card.input_columns, self.processor_card.parameters["method"]):
             if method == "label":
                 output_col = f"{prefix}_{col}"
                 df[output_col] = df[col].map(self._category_maps[col])
                 df[output_col] = df[output_col].fillna(-1).astype(int)
 
-                if col not in self.process_step_card.output_columns:
+                if col not in self.processor_card.output_columns:
                     df = df.drop(columns=[col])
 
             elif method == "onehot":
                 dummies = pd.get_dummies(df[col], prefix=f"{prefix}_{col}")
                 df = pd.concat([df, dummies], axis=1)
 
-                if col not in self.process_step_card.output_columns:
+                if col not in self.processor_card.output_columns:
                     df = df.drop(columns=[col])
             else:
                 raise ValueError(f"Unsupported method: {method}. Use 'label' or 'onehot'")
@@ -196,21 +203,21 @@ class CategoricalTransformPandas(PandasProcessor):
 
 
 class ScalerTransformPandas(PandasProcessor):
-    def __init__(self, process_step_card: ProcessStepCard, feature_store=None):
-        super().__init__(process_step_card, feature_store)
-        if not all(method == "standard" for method in self.process_step_card.parameters["method"]):
+    def __init__(self, processor_card: ProcessorCard, feature_store=None):
+        super().__init__(processor_card, feature_store)
+        if not all(method == "standard" for method in self.processor_card.parameters["method"]):
             raise ValueError("All methods must be 'standard' for ScalerTransform")
 
     def _fit_impl(self, X: pd.DataFrame, y=None):
-        self._fitted_state["mean"] = X[self.process_step_card.input_columns].mean().to_dict()
-        self._fitted_state["std"] = X[self.process_step_card.input_columns].std().to_dict()
+        self._fitted_state["mean"] = X[self.processor_card.input_columns].mean().to_dict()
+        self._fitted_state["std"] = X[self.processor_card.input_columns].std().to_dict()
         return self
 
     def _transform_impl(self, X: pd.DataFrame) -> pd.DataFrame:
         df = X.copy()
-        prefix = self.process_step_card.parameters["prefix"]
+        prefix = self.processor_card.parameters["prefix"]
 
-        for col in self.process_step_card.input_columns:
+        for col in self.processor_card.input_columns:
             output_col = f"{prefix}_{col}"
             df[output_col] = (df[col] - self._fitted_state["mean"][col]) / self._fitted_state["std"][col]
 
@@ -218,16 +225,16 @@ class ScalerTransformPandas(PandasProcessor):
 
 
 class MissingValueProcessorPandas(PandasProcessor):
-    def __init__(self, process_step_card: ProcessStepCard, feature_store=None):
-        super().__init__(process_step_card, feature_store)
+    def __init__(self, processor_card: ProcessorCard, feature_store=None):
+        super().__init__(processor_card, feature_store)
         valid_methods = ["mean", "median", "mode", "constant"]
-        if not all(method in valid_methods for method in self.process_step_card.parameters["method"]):
+        if not all(method in valid_methods for method in self.processor_card.parameters["method"]):
             raise ValueError(f"Methods must be one of {valid_methods}")
 
     def _fit_impl(self, X: pd.DataFrame, y=None):
         self._fitted_state["fill_values"] = {}
 
-        for col, method in zip(self.process_step_card.input_columns, self.process_step_card.parameters["method"]):
+        for col, method in zip(self.processor_card.input_columns, self.processor_card.parameters["method"]):
             if X[col].dtype == "float64" and method in ["mean", "median"]:
                 if method == "mean":
                     self._fitted_state["fill_values"][col] = float(X[col].mean())
@@ -236,7 +243,7 @@ class MissingValueProcessorPandas(PandasProcessor):
             elif method == "mode":
                 self._fitted_state["fill_values"][col] = X[col].mode()[0]
             elif method == "constant":
-                self._fitted_state["fill_values"][col] = self.process_step_card.parameters["fill_value"]
+                self._fitted_state["fill_values"][col] = self.processor_card.parameters["fill_value"]
             else:
                 raise ValueError(f"Invalid method {method} for column type {X[col].dtype}")
 
@@ -245,7 +252,7 @@ class MissingValueProcessorPandas(PandasProcessor):
     def _transform_impl(self, X: pd.DataFrame) -> pd.DataFrame:
         df = X.copy()
 
-        for col in self.process_step_card.input_columns:
+        for col in self.processor_card.input_columns:
             fill_value = self._fitted_state["fill_values"][col]
             df[col] = df[col].fillna(fill_value)
 
