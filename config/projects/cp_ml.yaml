@@ -1,0 +1,267 @@
+tracking:
+  experiment_name: "customer_purchases"
+  artifact_path: ""
+  tracking_uri: "http://mlflow:5000" #"http://localhost:5000" "http://mlflow:5000"  # docker container
+  log_model_path: "models"
+
+data:
+  path: "data/raw/customer_purchases.csv"
+  file_format: "csv"
+  use_col:
+  options:
+    # engine: pyarrow
+    # index: false
+    # compression: snappy
+    # coerce_timestamps: ms,
+    # allow_truncated_timestamps: True
+          
+
+data_engine: "pandas" # pandas, polars
+
+logger:
+  level: "INFO"
+  name: "mlkit"
+  path: "logs/mlkit.log"
+
+data_processing:
+  processors:
+    last_purchase_date:
+      name: last_purchase_date
+      description: Last purchase date for each customer
+      scope: realtime
+      feature_store: true
+      input_columns:
+        - customer_id
+        - purchase_date
+      output_columns:
+        - last_purchase_date
+
+    days_since_last_purchase:
+      name: days_since_last_purchase
+      description: Days since last purchase for each customer
+      scope: realtime
+      feature_store: true
+      input_columns:
+        - purchase_date
+        - last_purchase_date
+      output_columns:
+        - days_since_last_purchase
+
+    date_features:
+      name: date_features
+      description: Date features for each customer
+      scope: online
+      feature_store: true
+      enabled: true
+      input_columns:
+        - purchase_date
+      output_columns:
+        - day_of_week
+        - month
+        - year
+        - season
+        - day
+      parameters:
+        prefix: purchase
+
+    categorical_encoder:
+      name: categorical_encoder
+      description: Categorical encoding for each feature
+      scope: online
+      feature_store: false
+      input_columns:
+        - gender
+        - purchase_season
+      output_columns:
+        - gender
+        - purchase_season
+      parameters:
+        prefix: encoded
+        method:
+          - label
+          - label
+
+    scaler:
+      name: scaler
+      description: Scaler for numerical features
+      scope: offline
+      feature_store: false
+      input_columns:
+        - annual_income
+      output_columns:
+        - annual_income
+      parameters:
+        prefix: scaled
+        method:
+          - standard
+
+    missing_value_processor:
+      name: missing_value_processor
+      description: Handle missing values
+      scope: offline
+      feature_store: false
+      input_columns:
+        - age
+        - gender
+        - annual_income
+      output_columns:
+        - age
+        - gender
+        - annual_income
+      parameters:
+        method:
+          - median
+          - mode
+          - mean
+        fill_value: 0
+
+feature_store:
+  type: "feast"
+  repo_path: "projects/customer_purchase/"
+  timestamp_column: purchase_date
+  entity_column: customer_id
+  save_path: "projects/customer_purchase/data/features.parquet"
+  ttl_days: 120
+  stored_columns:
+      - age
+      - gender
+      - annual_income
+      - purchase_amount
+      - last_purchase_date
+      - days_since_last_purchase
+      - purchase_day
+      - purchase_year
+      - purchase_season
+      - purchase_month
+      - purchase_day_of_week
+      - purchase_date # timestamp
+
+  params:
+    file_source_path: data/features.parquet
+  
+
+pipeline:
+  feature:
+    type: feature
+    feature_store: true
+    steps: # data processing steps
+      online:
+        - date_features
+      realtime:
+        - last_purchase_date
+        - days_since_last_purchase
+      offline: []
+
+    
+
+   
+  train:
+    type: train
+    load_type: file
+    feature_store: false
+    load_path: projects/purchase_prediction/data/features.parquet
+    data_processing:
+      steps:
+        - name: categorical_encoding
+        - name: scaler
+        - name: missing_value_processor
+      order:
+        - categorical_encoding
+        - scaler
+        - missing_value_processor
+
+    feature_col:
+      #  - gender
+      - encoded_gender
+      - scaled_annual_income
+      - purchase_day
+      - days_since_last_purchase
+      - purchase_year
+      - encoded_purchase_season
+
+      #- purchase_amount
+      #- last_purchase_date
+      #- purchase_season
+      #- purchase_month
+
+    target: purchase_amount
+
+  deploy:
+    type: deploy
+    metadata_schema:
+      config: True
+      data_processing_params: True
+      feature_params: True
+      target_params: True
+      metrics: True
+    tags:
+
+  inference:
+
+model:
+  model_type: "lightgbm" # xgboost, lightgbm
+  task_type: "regression"
+  model_params:
+    n_estimators: 120
+    objective: "regression" # LightGBM uses "regression" instead of "reg:squarederror"
+    max_depth: 20
+    num_leaves: 31 # LightGBM specific parameter, default is 31
+    learning_rate: 0.1
+    boosting_type: "gbdt" # options: gbdt, dart, goss, rf
+    metric: "rmse" # LightGBM metrics: rmse, mae, l1, l2, etc.
+    # Additional LightGBM specific parameters you might want to consider:
+    # min_data_in_leaf: 20
+    # feature_fraction: 0.8
+    # bagging_fraction: 0.8
+    # bagging_freq: 5
+    # lambda_l1: 0.0  # L1 regularization
+    # lambda_l2: 0.0  # L2 regularization
+  train_params:
+    eval_metric: "rmse" # LightGBM metric for evaluation
+    #verbose: False
+    #verbose_eval: False  # Not needed for LightGBM, it uses 'verbose'
+    #Not needed for LightGBM, it uses 'verbose'
+    #verbose_eval: 10  # Not needed for LightGBM, it uses 'verbose'
+    #early_stopping_rounds: 10  # Optional: for early stoppi
+    #metrics: ["r2"]  # sklearn metrics for evaluation
+  random_state: 42
+  n_splits: 5
+  save_path: "models/"
+
+trainer:
+  type: "sklearn"
+  validation_strategy:
+    validation_size: 0.2
+    shuffle: true
+  metrics:
+    - "r2"
+    - "neg_mean_squared_error"
+    - "neg_mean_absolute_error"
+  params: {}
+
+deploy:
+  type: "local" # registry
+  converter:
+    converter_type: "onnx"
+    target_format: "onnx"
+    features:
+      n_features: 4
+    onnx:
+      opset_version: 13
+
+  register:
+    register_type: "custom"
+    model_name: "customer_purchases"
+    version: "0.1"
+    description: "Customer purchase prediction model"
+
+    custom:
+      registry_uri: "http://registry:8000" #"http://localhost:8000"  #"http://mlflow:5000" # docker container
+      timeout: 30
+      storage_path: "models/"
+
+  select:
+    metric_name: "r2"
+    threshold: -0.2
+    maximize: true
+    top_n: 1
