@@ -1,0 +1,49 @@
+
+j
+J
+customer_idEntity based on customer_id"customer_idJcustomer_purchase
+°—å¹¨Â¹ŸÔ¬±ºˆ¿ë§
+H
+(
+__dummy"
+__dummy_idJcustomer_purchase
+°—å¹µÀŸÔ¬±ºÀ»ô§1"$8e3271e7-c3ba-4e4e-8547-eb0cb43f8e58*Ô¬±ºĞ˜¨2¨
+é
+customer_id_feature_viewcustomer_purchasecustomer_id"
+age"
+
+gender"
+annual_income"
+purchase_amount"
+last_purchase_date"
+days_since_last_purchase"
+purchase_day"
+purchase_year"
+purchase_season"
+purchase_month"
+purchase_day_of_week"
+purchase_date2€èø:vpurchase_dateZdata/features.parquetŠ1feast.infra.offline_stores.file_source.FileSource¢data/features.parquet@R-Feature view for customer_id with 12 featuresb
+customer_id:
+°—å¹à•¦ŸôÆ°ºÈâµ¿
+³¾Ö¹ÀıÔÔ³íğ¹ÀıÔÔ:
+ü
+customer_feature_servicecustomer_purchaseÌ
+customer_id_feature_view
+age
+
+gender
+annual_income
+purchase_amount
+last_purchase_date
+days_since_last_purchase
+purchase_day
+purchase_year
+purchase_season
+purchase_month
+purchase_day_of_week
+purchase_dateBBpurchase_dateZdata/features.parquet¢data/features.parquet
+°—å¹èÙÆŸÔ¬±º°Õû§bŠpurchase_dateZdata/features.parquetŠ1feast.infra.offline_stores.file_source.FileSource¢data/features.parquetªcustomer_purchasez9
+customer_purchase$1b5ae0c7-410e-46a8-9583-c12b3046bd7bŠ3
+
+customer_purchase
+°—å¹èû‘Ÿ°—å¹èû‘Ÿ
