@@ -44,31 +44,31 @@ class DataProcess(BaseModel):
         return cls(steps=steps, order=data["order"])
 
 
-class FeaturePipeline(Pipeline):
+class FeaturePipelineSteps(BaseModel):
+    online:Optional[List] = Field([], description="Online steps with order")
+    offline:Optional[List] = Field([], description="Offline steps with order")
+    realtime:Optional[List] = Field([], description="Realtime steps with order")
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "FeaturePipelineSteps":
+        """Create FeaturePipelineSteps from dictionary."""
+        return cls(online=data.get("online",[]), offline=data.get("offline",[]), realtime=data.get("realtime",[]))
+
+
+class FeaturePipeline(BaseModel):
     type: PipelineType = PipelineType.FEATURE
-    save_type: SaveType
     feature_store: bool
-    stored_columns: List[str] = Field(..., description="Columns to store in feature store")
-    timestamp_column: str = Field(..., description="Timestamp column for feature store")
-    entity_columns: str = Field(..., description="Entity column for feature store")
-    save_path: str = Field(..., description="Path to save features")
-    feature_store_params: Optional[Dict[str, Any]] = Field(None, description="Parameters for feature store")
+    steps: FeaturePipelineSteps = Field(..., description="Steps to execute")
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "FeaturePipeline":
         """Create FeaturePipelineStep from dictionary."""
-        steps = [PipelineStep(name=step["name"]) for step in data["steps"]]
+        steps = FeaturePipelineSteps.from_dict(data["steps"])
+        
         return cls(
             steps=steps,
-            order=data["order"],
             type=data["type"],
-            save_type=data["save_type"],
             feature_store=data["feature_store"],
-            stored_columns=data["stored_columns"],
-            timestamp_column=data["timestamp_column"],
-            entity_columns=data["entity_columns"],
-            save_path=data["save_path"],
-            feature_store_params=data["feature_store_params"],
         )
 
 
