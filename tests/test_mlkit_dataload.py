@@ -4,7 +4,7 @@ import polars as pl
 from pathlib import Path
 import tempfile
 
-from mlkit.data.data_load import PandasAdapter, PolarsAdapter
+from mlkit.data.data_manager import PandasAdapter, PolarsAdapter
 
 
 @pytest.fixture
