@@ -18,6 +18,8 @@ class BaseFeatureTransformer(BaseEstimator, TransformerMixin, ABC):
         self.state = FeatureState.TRAINING
         self.save_object = None
 
+        self._is_fitted = False
+
     def set_state(self, state: FeatureState):
         """Set the current state of feature transformer"""
         self.state = state
@@ -56,13 +58,15 @@ class BaseFeatureTransformer(BaseEstimator, TransformerMixin, ABC):
             "processor_card": self.processor_card.model_dump(),
             "fitted_state": self._fitted_state,
             "state": self.state.value,  # Also save the state
+            "is_fitted": self._is_fitted,
         }
 
-    def load_params(self, params: Dict[str, Any]):
+    def loading_params(self, params: Dict[str, Any]):
         """Load parameters from a dictionary"""
         self.processor_card = ProcessorCard(**params["processor_card"])
         self._fitted_state = params["fitted_state"]
         self.state = FeatureState(params["state"])
+        self._is_fitted = params.get("is_fitted", False)
 
     def save(self, path: Union[Path, str]) -> None:
         """Save transformer state"""
@@ -83,7 +87,16 @@ class BaseFeatureTransformer(BaseEstimator, TransformerMixin, ABC):
             self.processor_card = ProcessorCard.from_dict(self.save_object["processor_card"])
             self._fitted_state = self.save_object["fitted_state"]
             self.state = FeatureState(self.save_object["state"])  # Restore the state
+            self._is_fitted = self.save_object.get("is_fitted", False)
 
+    def _check_is_fitted(self):
+        """Verify that the processor has been fitted"""
+        if not self._is_fitted:
+            raise ValueError(
+                "is not fitted yet. "
+                "Call 'fit' before using processor."
+            )
+    
 
 class PandasProcessor(BaseFeatureTransformer):
     """Base class for Pandas-based transformers"""
@@ -92,11 +105,14 @@ class PandasProcessor(BaseFeatureTransformer):
         if not isinstance(X, pd.DataFrame):
             raise TypeError("PandasProcessor requires pandas DataFrame")
         self._check_fit_state()  # Add state check
-        return self._fit_impl(X, y)
-
+        result =  self._fit_impl(X, y)
+        self._is_fitted = True
+        return result
+    
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         if not isinstance(X, pd.DataFrame):
             raise TypeError("PandasProcessor requires pandas DataFrame")
+        self._check_is_fitted()
         return self._transform_impl(X)
 
     @abstractmethod
